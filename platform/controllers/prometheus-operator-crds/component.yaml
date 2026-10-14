@@ -1,0 +1,6 @@
+component:
+  name: prometheus-operator-crds
+  namespace: monitoring
+  repoURL: https://prometheus-community.github.io/helm-charts
+  chart: prometheus-operator-crds
+  version: 32.0.1

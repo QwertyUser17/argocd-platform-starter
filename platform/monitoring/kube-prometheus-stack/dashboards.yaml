@@ -1,0 +1,129 @@
+grafana:
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: platform
+          folder: Platform
+          type: file
+          disableDeletion: true
+          options:
+            path: /var/lib/grafana/dashboards/platform
+
+  dashboards:
+    platform:
+      # KRR-style right-sizing: CPU request = p95 usage, memory request = max usage + 15%.
+      requests-vs-usage:
+        json: |
+          {
+            "uid": "requests-vs-usage",
+            "title": "Requests vs usage",
+            "tags": ["platform", "right-sizing"],
+            "timezone": "browser",
+            "refresh": "5m",
+            "time": {"from": "now-24h", "to": "now"},
+            "schemaVersion": 39,
+            "templating": {
+              "list": [
+                {
+                  "name": "datasource",
+                  "label": "Data source",
+                  "type": "datasource",
+                  "query": "prometheus"
+                },
+                {
+                  "name": "namespace",
+                  "label": "Namespace",
+                  "type": "query",
+                  "datasource": {"type": "prometheus", "uid": "${datasource}"},
+                  "query": {"query": "label_values(kube_pod_container_resource_requests, namespace)", "refId": "namespace"},
+                  "refresh": 2,
+                  "multi": true,
+                  "includeAll": true,
+                  "current": {"text": "All", "value": "$__all"}
+                },
+                {
+                  "name": "window",
+                  "label": "History window",
+                  "type": "custom",
+                  "query": "1d,7d,14d",
+                  "current": {"text": "7d", "value": "7d"},
+                  "options": [
+                    {"text": "1d", "value": "1d", "selected": false},
+                    {"text": "7d", "value": "7d", "selected": true},
+                    {"text": "14d", "value": "14d", "selected": false}
+                  ]
+                }
+              ]
+            },
+            "panels": [
+              {
+                "id": 1,
+                "type": "table",
+                "title": "Requests vs usage per container over $window",
+                "gridPos": {"x": 0, "y": 0, "w": 24, "h": 12},
+                "datasource": {"type": "prometheus", "uid": "${datasource}"},
+                "targets": [
+                  {"refId": "A", "instant": true, "format": "table",
+                   "expr": "max by (namespace, container) (kube_pod_container_resource_requests{resource=\"cpu\", namespace=~\"$namespace\"})"},
+                  {"refId": "B", "instant": true, "format": "table",
+                   "expr": "max by (namespace, container) (quantile_over_time(0.95, node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate5m{namespace=~\"$namespace\"}[$window]))"},
+                  {"refId": "C", "instant": true, "format": "table",
+                   "expr": "max by (namespace, container) (kube_pod_container_resource_requests{resource=\"memory\", namespace=~\"$namespace\"})"},
+                  {"refId": "D", "instant": true, "format": "table",
+                   "expr": "max by (namespace, container) (max_over_time(container_memory_working_set_bytes{container!=\"\", container!=\"POD\", namespace=~\"$namespace\"}[$window]))"},
+                  {"refId": "E", "instant": true, "format": "table",
+                   "expr": "1.15 * max by (namespace, container) (max_over_time(container_memory_working_set_bytes{container!=\"\", container!=\"POD\", namespace=~\"$namespace\"}[$window]))"}
+                ],
+                "transformations": [
+                  {"id": "merge", "options": {}},
+                  {"id": "organize", "options": {
+                    "excludeByName": {"Time": true},
+                    "renameByName": {
+                      "Value #A": "CPU request",
+                      "Value #B": "CPU p95 = recommended request",
+                      "Value #C": "Memory request",
+                      "Value #D": "Memory max",
+                      "Value #E": "Recommended memory request"
+                    }
+                  }}
+                ],
+                "fieldConfig": {
+                  "defaults": {"decimals": 3},
+                  "overrides": [
+                    {"matcher": {"id": "byRegexp", "options": "Memory.*|Recommended memory.*"},
+                     "properties": [{"id": "unit", "value": "bytes"}, {"id": "decimals", "value": 0}]}
+                  ]
+                },
+                "options": {"sortBy": [{"displayName": "CPU request", "desc": true}]}
+              },
+              {
+                "id": 2,
+                "type": "timeseries",
+                "title": "CPU: usage vs request",
+                "gridPos": {"x": 0, "y": 12, "w": 12, "h": 9},
+                "datasource": {"type": "prometheus", "uid": "${datasource}"},
+                "fieldConfig": {"defaults": {"unit": "cores"}, "overrides": []},
+                "targets": [
+                  {"refId": "A", "legendFormat": "{{container}} usage",
+                   "expr": "sum by (container) (node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate5m{namespace=~\"$namespace\"})"},
+                  {"refId": "B", "legendFormat": "{{container}} request",
+                   "expr": "sum by (container) (kube_pod_container_resource_requests{resource=\"cpu\", namespace=~\"$namespace\"})"}
+                ]
+              },
+              {
+                "id": 3,
+                "type": "timeseries",
+                "title": "Memory: working set vs request",
+                "gridPos": {"x": 12, "y": 12, "w": 12, "h": 9},
+                "datasource": {"type": "prometheus", "uid": "${datasource}"},
+                "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+                "targets": [
+                  {"refId": "A", "legendFormat": "{{container}} working set",
+                   "expr": "sum by (container) (container_memory_working_set_bytes{container!=\"\", container!=\"POD\", namespace=~\"$namespace\"})"},
+                  {"refId": "B", "legendFormat": "{{container}} request",
+                   "expr": "sum by (container) (kube_pod_container_resource_requests{resource=\"memory\", namespace=~\"$namespace\"})"}
+                ]
+              }
+            ]
+          }

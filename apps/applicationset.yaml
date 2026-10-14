@@ -1,0 +1,57 @@
+# Wave 2: applications, after the platform. One Application per environments/<env>/<app>
+# overlay on the cluster labelled with that env, deployed to namespace app-<app>.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchExpressions:
+                  - key: env
+                    operator: In
+                    values: [dev, stage, prod]
+          - git:
+              repoURL: https://github.com/QwertyUser17/argocd-platform-starter.git
+              revision: main
+              directories:
+                - path: 'environments/{{ index .metadata.labels "env" }}/*'
+  template:
+    metadata:
+      name: '{{ .path.basename }}-{{ index .metadata.labels "env" }}'
+      labels:
+        layer: apps
+        env: '{{ index .metadata.labels "env" }}'
+    spec:
+      # Fixed here, not taken from generator parameters: an app cannot switch itself to the platform project.
+      project: apps
+      source:
+        repoURL: https://github.com/QwertyUser17/argocd-platform-starter.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+      destination:
+        server: '{{ .server }}'
+        namespace: 'app-{{ .path.basename }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          # Deletions wait for a confirmation in the UI or CLI: a removed manifest
+          # in an app repo must not silently delete a production Service or PVC.
+          - Prune=confirm
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

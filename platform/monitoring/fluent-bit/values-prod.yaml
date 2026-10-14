@@ -1,0 +1,5 @@
+env:
+  - name: ENVIRONMENT
+    value: prod
+  - name: AWS_REGION
+    value: us-east-1

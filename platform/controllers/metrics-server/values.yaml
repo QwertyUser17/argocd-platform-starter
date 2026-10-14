@@ -1,0 +1,13 @@
+# Resource metrics API for the HorizontalPodAutoscalers in apps/.
+replicas: 2
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

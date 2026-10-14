@@ -1,0 +1,5 @@
+prometheus:
+  prometheusSpec:
+    # Added to every alert, so Slack messages say which environment fired.
+    externalLabels:
+      env: stage

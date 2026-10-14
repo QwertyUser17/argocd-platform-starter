@@ -1,0 +1,65 @@
+# Wave 1: monitoring and logging, after the CRDs and the Secrets Store CSI driver from wave 0.
+# Same template as controllers.yaml plus optional alerts.yaml and dashboards.yaml value files.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-monitoring
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchExpressions:
+                  - key: env
+                    operator: In
+                    values: [dev, stage, prod]
+          - git:
+              repoURL: https://github.com/QwertyUser17/argocd-platform-starter.git
+              revision: main
+              files:
+                - path: platform/monitoring/*/component.yaml
+  template:
+    metadata:
+      name: '{{ .component.name }}-{{ index .metadata.labels "env" }}'
+      labels:
+        layer: platform
+        env: '{{ index .metadata.labels "env" }}'
+    spec:
+      project: platform
+      sources:
+        - repoURL: '{{ .component.repoURL }}'
+          chart: '{{ .component.chart }}'
+          targetRevision: '{{ .component.version }}'
+          helm:
+            releaseName: '{{ .component.name }}'
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - $values/{{ .path.path }}/values.yaml
+              - $values/{{ .path.path }}/alerts.yaml
+              - $values/{{ .path.path }}/dashboards.yaml
+              - $values/{{ .path.path }}/values-{{ index .metadata.labels "env" }}.yaml
+        - repoURL: https://github.com/QwertyUser17/argocd-platform-starter.git
+          targetRevision: main
+          ref: values
+      destination:
+        server: '{{ .server }}'
+        namespace: '{{ .component.namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 10
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

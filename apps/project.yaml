@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Application workloads. Can reach only app-* namespaces and no other cluster-scoped resources.
+  sourceRepos:
+    - https://github.com/QwertyUser17/argocd-platform-starter.git
+  destinations:
+    - server: "*"
+      namespace: app-*
+  # Needed for CreateNamespace=true; the name pattern keeps platform namespaces out of reach.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+      name: app-*
+  roles:
+    - name: developers
+      description: Application teams can view and sync applications, not change projects or the platform.
+      groups:
+        - app-developers
+      policies:
+        - p, proj:apps:developers, applications, get, apps/*, allow
+        - p, proj:apps:developers, applications, sync, apps/*, allow

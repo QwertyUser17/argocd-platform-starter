@@ -1,0 +1,6 @@
+component:
+  name: kube-prometheus-stack
+  namespace: monitoring
+  repoURL: https://prometheus-community.github.io/helm-charts
+  chart: kube-prometheus-stack
+  version: 92.7.0

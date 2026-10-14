@@ -1,0 +1,79 @@
+serviceAccount:
+  name: fluent-bit
+
+priorityClassName: system-node-critical
+
+# Runs on every node, including tainted system and Graviton nodes.
+tolerations:
+  - operator: Exists
+
+# Hard memory cap: the input buffers (Mem_Buf_Limit) pause the tail instead of growing past it.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+serviceMonitor:
+  enabled: true
+
+# ENVIRONMENT and AWS_REGION come from values-<env>.yaml.
+config:
+  inputs: |
+    [INPUT]
+        Name tail
+        Path /var/log/containers/*.log
+        Exclude_Path /var/log/containers/fluent-bit-*.log
+        multiline.parser cri
+        Tag kube.*
+        Mem_Buf_Limit 5MB
+        Skip_Long_Lines On
+
+    [INPUT]
+        Name systemd
+        Tag host.*
+        Systemd_Filter _SYSTEMD_UNIT=kubelet.service
+        Read_From_Tail On
+        Mem_Buf_Limit 5MB
+
+  filters: |
+    [FILTER]
+        Name kubernetes
+        Match kube.*
+        Merge_Log Off
+        Labels Off
+        Annotations Off
+        K8S-Logging.Exclude On
+
+    # JSON application logs become structured fields; other lines pass through unchanged.
+    [FILTER]
+        Name parser
+        Match kube.*
+        Key_Name log
+        Parser json_log
+        Reserve_Data On
+
+  outputs: |
+    [OUTPUT]
+        Name cloudwatch_logs
+        Match kube.*
+        region ${AWS_REGION}
+        log_group_name /eks/${ENVIRONMENT}/containers
+        log_stream_prefix pod.
+        auto_create_group On
+        log_retention_days 14
+
+    [OUTPUT]
+        Name cloudwatch_logs
+        Match host.*
+        region ${AWS_REGION}
+        log_group_name /eks/${ENVIRONMENT}/host
+        log_stream_prefix node.
+        auto_create_group On
+        log_retention_days 14
+
+  customParsers: |
+    [PARSER]
+        Name json_log
+        Format json

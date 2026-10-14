@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../apps/demo-api/base
+
+# CI writes newTag and digest: build.yml for dev, promote.yml for stage and prod.
+images:
+  - name: ghcr.io/qwertyuser17/demo-api
+    newTag: v0.1.0

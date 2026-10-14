@@ -1,0 +1,6 @@
+component:
+  name: metrics-server
+  namespace: kube-system
+  repoURL: https://kubernetes-sigs.github.io/metrics-server
+  chart: metrics-server
+  version: 3.14.0

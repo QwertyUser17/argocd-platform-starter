@@ -1,0 +1,6 @@
+component:
+  name: fluent-bit
+  namespace: logging
+  repoURL: https://fluent.github.io/helm-charts
+  chart: fluent-bit
+  version: 0.58.3

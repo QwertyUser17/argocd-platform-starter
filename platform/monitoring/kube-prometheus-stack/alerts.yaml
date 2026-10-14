@@ -1,0 +1,57 @@
+defaultRules:
+  disabled:
+    # Replaced by PodCrashLooping and NodeNotReady below, so Slack gets one alert, not two.
+    KubePodCrashLooping: true
+    KubeNodeNotReady: true
+
+additionalPrometheusRulesMap:
+  platform-alerts:
+    groups:
+      - name: workloads
+        rules:
+          - alert: ContainerOOMKilled
+            expr: |
+              increase(kube_pod_container_status_restarts_total[10m]) > 0
+              and on (namespace, pod, container)
+              kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.pod }}/{{ $labels.container }} was OOM-killed"
+              description: "The container hit its memory limit and was restarted. Check the memory request/limit against the Requests vs usage dashboard."
+
+          - alert: PodCrashLooping
+            expr: max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[5m]) >= 1
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.pod }}/{{ $labels.container }} is in CrashLoopBackOff"
+              description: "The container has been restarting for 15 minutes."
+
+          # Applies to application namespaces only: platform components are sized by the platform team.
+          # Memory limit only; CPU limits are left out on purpose to avoid throttling.
+          - alert: ContainerWithoutMemoryLimit
+            expr: |
+              count by (namespace, pod, container) (kube_pod_container_info{namespace=~"app-.*"})
+              unless on (namespace, pod, container)
+              kube_pod_container_resource_limits{resource="memory"}
+              and on (namespace, pod)
+              kube_pod_status_phase{phase="Running"} == 1
+            for: 30m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.pod }}/{{ $labels.container }} has no memory limit"
+              description: "A container without a memory limit can take memory from every other pod on the node."
+
+      - name: nodes
+        rules:
+          - alert: NodeNotReady
+            expr: kube_node_status_condition{condition="Ready", status="true"} == 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Node {{ $labels.node }} is NotReady"
+              description: "The node has not reported Ready for 5 minutes."

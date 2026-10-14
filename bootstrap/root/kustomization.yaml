@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Sync waves: AppProjects (-1), platform controllers and CRDs (0), monitoring (1), apps (2).
+resources:
+  - ../../platform
+  - ../../apps

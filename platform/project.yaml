@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Cluster-wide controllers, monitoring and logging. Owned by the platform team.
+  sourceRepos:
+    - https://github.com/QwertyUser17/argocd-platform-starter.git
+    - https://prometheus-community.github.io/helm-charts
+    - https://charts.jetstack.io
+    - https://aws.github.io/secrets-store-csi-driver-provider-aws
+    - https://kubernetes-sigs.github.io/metrics-server
+    - https://fluent.github.io/helm-charts
+  destinations:
+    - server: "*"
+      namespace: kube-system
+    - server: "*"
+      namespace: cert-manager
+    - server: "*"
+      namespace: monitoring
+    - server: "*"
+      namespace: logging
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  roles:
+    - name: operators
+      description: Platform team can sync and roll back platform applications.
+      groups:
+        - platform-team
+      policies:
+        - p, proj:platform:operators, applications, *, platform/*, allow

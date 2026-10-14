@@ -1,0 +1,142 @@
+# CRDs come from platform/controllers/prometheus-operator-crds (wave 0).
+crds:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+    # Select ServiceMonitors, PodMonitors and rules from every namespace, not only this release's.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    # Scrapes pods annotated with prometheus.io/scrape, prometheus.io/port and prometheus.io/path.
+    additionalScrapeConfigs:
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_phase]
+            regex: Pending|Succeeded|Failed
+            action: drop
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            regex: (.+)
+            target_label: __metrics_path__
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+
+alertmanager:
+  serviceAccount:
+    name: alertmanager
+  config:
+    global:
+      resolve_timeout: 5m
+    inhibit_rules:
+      - source_matchers: ['severity = critical']
+        target_matchers: ['severity =~ warning|info']
+        equal: [namespace, alertname]
+      - source_matchers: ['severity = warning']
+        target_matchers: ['severity = info']
+        equal: [namespace, alertname]
+      - source_matchers: ['alertname = InfoInhibitor']
+        target_matchers: ['severity = info']
+        equal: [namespace]
+      - target_matchers: ['alertname = InfoInhibitor']
+    route:
+      group_by: [alertname, namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: slack
+      routes:
+        - receiver: "null"
+          matchers: ['alertname =~ "Watchdog|InfoInhibitor"']
+    receivers:
+      - name: "null"
+      - name: slack
+        slack_configs:
+          # Mounted from AWS Secrets Manager by the Secrets Store CSI driver, never stored in git.
+          - api_url_file: /mnt/secrets-store/slack-webhook-url
+            send_resolved: true
+            title: '[{{ .Status | toUpper }}] {{ .CommonLabels.env }}: {{ .CommonLabels.alertname }}'
+            text: |-
+              {{ range .Alerts }}*{{ .Labels.severity }}* {{ .Labels.namespace }}: {{ .Annotations.summary }}
+              {{ .Annotations.description }}
+              {{ end }}
+    templates:
+      - /etc/alertmanager/config/*.tmpl
+  alertmanagerSpec:
+    volumes:
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: alertmanager-slack
+    volumeMounts:
+      - name: secrets-store
+        mountPath: /mnt/secrets-store
+        readOnly: true
+
+grafana:
+  serviceAccount:
+    name: grafana
+  env:
+    # Replace the chart's default admin credentials; with both set the chart creates and references no admin Secret.
+    GF_SECURITY_ADMIN_USER: admin
+    GF_SECURITY_ADMIN_PASSWORD: $__file{/mnt/secrets-store/grafana-admin-password}
+  extraSecretMounts:
+    - name: secrets-store
+      mountPath: /mnt/secrets-store
+      readOnly: true
+      csi:
+        driver: secrets-store.csi.k8s.io
+        readOnly: true
+        volumeAttributes:
+          secretProviderClass: grafana-admin
+
+extraManifests:
+  alertmanager-slack:
+    apiVersion: secrets-store.csi.x-k8s.io/v1
+    kind: SecretProviderClass
+    metadata:
+      name: alertmanager-slack
+      namespace: monitoring
+    spec:
+      provider: aws
+      parameters:
+        usePodIdentity: "true"
+        objects: |
+          - objectName: platform/monitoring/slack-webhook-url
+            objectType: secretsmanager
+            objectAlias: slack-webhook-url
+  grafana-admin:
+    apiVersion: secrets-store.csi.x-k8s.io/v1
+    kind: SecretProviderClass
+    metadata:
+      name: grafana-admin
+      namespace: monitoring
+    spec:
+      provider: aws
+      parameters:
+        usePodIdentity: "true"
+        objects: |
+          - objectName: platform/monitoring/grafana-admin-password
+            objectType: secretsmanager
+            objectAlias: grafana-admin-password

@@ -1,0 +1,3 @@
+# The AWS provider chart also installs the Secrets Store CSI driver as a dependency.
+tolerations:
+  - operator: Exists

@@ -1,0 +1,42 @@
+# Helm values for the argo-cd chart, see bootstrap/install.sh.
+configs:
+  cm:
+    # The root app orders platform and apps with sync waves on their ApplicationSets.
+    # The built-in check reports an ApplicationSet healthy once it has generated its
+    # Applications; this one also waits until every generated Application is Healthy,
+    # so the next wave starts only when the previous layer is actually up.
+    resource.customizations.health.argoproj.io_ApplicationSet: |
+      local hs = {}
+      if obj.status == nil or obj.status.conditions == nil then
+        hs.status = "Progressing"
+        hs.message = "Waiting for the ApplicationSet controller"
+        return hs
+      end
+      for _, condition in ipairs(obj.status.conditions) do
+        if condition.type == "ErrorOccurred" and condition.status == "True" then
+          hs.status = "Degraded"
+          hs.message = condition.message
+          return hs
+        end
+        if condition.type == "ResourcesUpToDate" and condition.status == "False" then
+          hs.status = "Progressing"
+          hs.message = condition.message
+          return hs
+        end
+      end
+      if obj.status.resources ~= nil then
+        for _, app in ipairs(obj.status.resources) do
+          if app.health == nil or app.health.status ~= "Healthy" then
+            hs.status = "Progressing"
+            hs.message = "Waiting for " .. app.name
+            return hs
+          end
+        end
+      end
+      hs.status = "Healthy"
+      hs.message = "All generated applications are healthy"
+      return hs
+
+  rbac:
+    # Everything beyond read-only access comes from AppProject roles (platform/project.yaml, apps/project.yaml).
+    policy.default: role:readonly

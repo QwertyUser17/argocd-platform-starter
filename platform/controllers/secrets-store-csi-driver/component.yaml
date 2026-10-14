@@ -1,0 +1,6 @@
+component:
+  name: secrets-store-csi-driver
+  namespace: kube-system
+  repoURL: https://aws.github.io/secrets-store-csi-driver-provider-aws
+  chart: secrets-store-csi-driver-provider-aws
+  version: 3.1.4
