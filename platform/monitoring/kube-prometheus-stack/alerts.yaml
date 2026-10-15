@@ -29,6 +29,17 @@ additionalPrometheusRulesMap:
               summary: "{{ $labels.pod }}/{{ $labels.container }} is in CrashLoopBackOff"
               description: "The container has been restarting for 15 minutes."
 
+          # Everything PodCrashLooping does not catch: ImagePullBackOff, CreateContainerConfigError
+          # (a missing Secret or ConfigMap), a volume that never mounts.
+          - alert: ContainerWaitingTooLong
+            expr: max by (namespace, pod, container, reason) (kube_pod_container_status_waiting_reason{reason!="CrashLoopBackOff"}) > 0
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.pod }}/{{ $labels.container }} has not started for 15 minutes"
+              description: "The container is stuck in {{ $labels.reason }}."
+
           # Applies to application namespaces only: platform components are sized by the platform team.
           # Memory limit only; CPU limits are left out on purpose to avoid throttling.
           - alert: ContainerWithoutMemoryLimit
