@@ -1,0 +1,125 @@
+# Renders everything Argo CD would apply (scripts/render.sh) and validates it, so a broken
+# chart bump, values file, alert rule or log pipeline fails here instead of in a cluster.
+# promtool, amtool and Fluent Bit run from the images the render deploys, not from separate pins.
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # Same Helm as the Argo CD release in bootstrap/install.sh, so the render matches what Argo CD applies.
+  # renovate: datasource=github-releases depName=helm/helm
+  HELM_VERSION: v4.2.1
+  # renovate: datasource=github-releases depName=yannh/kubeconform
+  KUBECONFORM_VERSION: v0.8.0
+  # renovate: datasource=docker depName=python
+  PYTHON_IMAGE_TAG: 3.14-alpine
+  KUBERNETES_VERSION: 1.37.0
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - run: scripts/render.sh rendered
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rendered
+          path: rendered/
+
+  kubeconform:
+    needs: render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: rendered
+          path: rendered
+
+      - name: Build JSON schemas from the rendered CRDs
+        run: |
+          mkdir -p schemas
+          yq ea 'select(.kind == "CustomResourceDefinition")' rendered/*.yaml > schemas/crds.yaml
+          curl -fsSLo schemas/openapi2jsonschema.py \
+            "https://raw.githubusercontent.com/yannh/kubeconform/${KUBECONFORM_VERSION}/scripts/openapi2jsonschema.py"
+          docker run --rm -v "$PWD/schemas:/schemas" -w /schemas \
+            -e FILENAME_FORMAT='{fullgroup}-{kind}-{version}' "python:${PYTHON_IMAGE_TAG}" \
+            sh -c 'pip install --quiet --root-user-action=ignore pyyaml==6.0.3 && python3 openapi2jsonschema.py crds.yaml > /dev/null'
+
+      - name: Validate against Kubernetes and CRD schemas
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w "ghcr.io/yannh/kubeconform:${KUBECONFORM_VERSION}" \
+            -strict -summary -output text \
+            -kubernetes-version "$KUBERNETES_VERSION" \
+            -skip CustomResourceDefinition \
+            -schema-location default \
+            -schema-location 'schemas/{{.Group}}-{{.ResourceKind}}-{{.ResourceAPIVersion}}.json' \
+            rendered/
+
+  prometheus:
+    needs: render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: rendered
+          path: rendered
+
+      - name: Check alerting rules with promtool
+        run: |
+          version=$(yq ea 'select(.kind == "Prometheus") | .spec.version' rendered/kube-prometheus-stack-prod.yaml)
+          mkdir -p rules
+          for f in rendered/kube-prometheus-stack-*.yaml; do
+            yq ea '[select(.kind == "PrometheusRule") | .spec.groups[]] | {"groups": .}' "$f" > "rules/$(basename "$f")"
+          done
+          # The distroless image has no shell for the glob; the regular one ships the same promtool.
+          # --lint=none: the chart's default rules record code_verb:apiserver_request_total:increase1h
+          # once per status-code class on purpose, and the duplicate-rule lint prints that as FAILED.
+          docker run --rm -v "$PWD/rules:/rules:ro" --entrypoint sh \
+            "quay.io/prometheus/prometheus:${version%-distroless}" -c 'promtool check rules --lint=none /rules/*.yaml'
+
+      - name: Check the Alertmanager config with amtool
+        run: |
+          image=$(yq ea 'select(.kind == "Alertmanager") | .spec.image' rendered/kube-prometheus-stack-prod.yaml)
+          for env in dev stage prod; do
+            yq ea 'select(.kind == "Secret" and (.metadata.name | test("^alertmanager-"))) | .data."alertmanager.yaml" | @base64d' \
+              "rendered/kube-prometheus-stack-$env.yaml" > "alertmanager-$env.yaml"
+          done
+          docker run --rm -v "$PWD:/w:ro" --entrypoint amtool "$image" \
+            check-config /w/alertmanager-dev.yaml /w/alertmanager-stage.yaml /w/alertmanager-prod.yaml
+
+  fluent-bit:
+    needs: render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: rendered
+          path: rendered
+
+      - name: Dry-run the rendered Fluent Bit config
+        run: |
+          for env in dev stage prod; do
+            f="rendered/fluent-bit-$env.yaml"
+            image=$(yq ea 'select(.kind == "DaemonSet") | .spec.template.spec.containers[0].image' "$f")
+            vars=$(yq ea 'select(.kind == "DaemonSet") | .spec.template.spec.containers[0].env[] | "--env=" + .name + "=" + .value' "$f")
+            mkdir -p "conf-$env"
+            for key in $(yq ea 'select(.kind == "ConfigMap") | .data | keys | .[]' "$f"); do
+              yq ea "select(.kind == \"ConfigMap\") | .data.\"$key\"" "$f" > "conf-$env/$key"
+            done
+            echo "== $env ($image)"
+            # shellcheck disable=SC2086 # one --env=NAME=value argument per line
+            docker run --rm -v "$PWD/conf-$env:/fluent-bit/etc/conf:ro" $vars "$image" \
+              --dry-run -c /fluent-bit/etc/conf/fluent-bit.conf
+          done
