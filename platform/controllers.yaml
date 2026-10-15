@@ -55,7 +55,12 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
+          # Lets a chart ship a custom resource together with the CRD that defines it.
+          - SkipDryRunOnMissingResource=true
         retry:
+          # Retries pick up the latest commit and generated spec instead of repeating the failed
+          # revision, e.g. a sync that started with the old chart version but the new values.
+          refresh: true
           limit: 10
           backoff:
             duration: 10s
