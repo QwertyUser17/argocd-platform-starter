@@ -1,0 +1,121 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "platformAutomerge": false,
+  "customManagers": [
+    {
+      "description": "Platform Helm charts in platform/<layer>/<component>/component.yaml",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^platform/[^/]+/[^/]+/component\\.yaml$/"
+      ],
+      "matchStrings": [
+        "repoURL: (?<registryUrl>\\S+)\\s+chart: (?<depName>\\S+)\\s+version: (?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "helm"
+    },
+    {
+      "description": "Argo CD chart in the bootstrap install script",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^bootstrap/install\\.sh$/"
+      ],
+      "matchStrings": [
+        "--repo (?<registryUrl>\\S+) \\\\\\s+--version (?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "argo-cd",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "description": "Tool versions in workflows, annotated with a '# renovate:' comment",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+[A-Z_]+: (?<currentValue>\\S+)"
+      ]
+    },
+    {
+      "description": "pip packages installed by workflow steps",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "pip install [^\\n]*?(?<depName>[\\w.-]+)==(?<currentValue>[\\w.]+)"
+      ],
+      "datasourceTemplate": "pypi"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "GitHub Actions and CI tools: minor, patch and digest updates merge themselves once validate passes",
+      "matchManagers": [
+        "github-actions",
+        "custom.regex"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Platform charts: merge requests for review",
+      "matchDatasources": [
+        "helm"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "The operator CRDs chart and kube-prometheus-stack must move together; minor and patch releases need no manual steps",
+      "matchPackageNames": [
+        "kube-prometheus-stack",
+        "prometheus-operator-crds"
+      ],
+      "groupName": "prometheus-operator"
+    },
+    {
+      "matchPackageNames": [
+        "kube-prometheus-stack",
+        "prometheus-operator-crds",
+        "metrics-server"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Helm in CI must stay the version Argo CD renders with, not the latest",
+      "matchPackageNames": [
+        "helm/helm"
+      ],
+      "automerge": false,
+      "prBodyNotes": [
+        "Merge only if the Argo CD release in `bootstrap/install.sh` uses this Helm version (see `hack/tool-versions.sh` in the argo-cd repository)."
+      ]
+    },
+    {
+      "description": "Argo CD is upgraded by re-running bootstrap/install.sh",
+      "matchPackageNames": [
+        "argo-cd"
+      ],
+      "prBodyNotes": [
+        "After merging, run `bootstrap/install.sh <kube-context>` against the management cluster and update `HELM_VERSION` in `.github/workflows/validate.yml` to the Helm version of the new Argo CD release."
+      ]
+    },
+    {
+      "description": "demo-api tags in the overlays are written by build.yml and promote.yml",
+      "matchPackageNames": [
+        "ghcr.io/qwertyuser17/demo-api"
+      ],
+      "enabled": false
+    }
+  ]
+}
