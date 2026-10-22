@@ -6,7 +6,7 @@
 
 A GitOps repository for Argo CD. It deploys a platform layer (CRDs, controllers, monitoring, logging) and apps to dev, stage and prod clusters. It also has the CI that builds an image once and promotes it from one environment to the next.
 
-It's a reference implementation of a setup I've run in production. This repo is a personal project written from scratch: same ideas, none of the original code.
+This is my approach to GitOps with Argo CD. It grew out of real projects and has run in production. This repository builds it again from scratch, in a better form.
 
 It's for a team with more than one environment, where a platform team owns the shared parts and app teams deploy their own services to the same clusters. One Argo CD in a management cluster manages all of them. With a single cluster it works too: just label that cluster `env=dev` (see "How to run"). The interesting part is "Decisions and why".
 
