@@ -14,7 +14,7 @@ dir=$(cd "$(dirname "$0")" && pwd)
 helm upgrade --install argocd argo-cd \
   --kube-context "$context" \
   --repo https://argoproj.github.io/argo-helm \
-  --version 10.10.3 \
+  --version 10.18.0 \
   --namespace argocd --create-namespace \
   --values "$dir/argocd-values.yaml" \
   --wait
