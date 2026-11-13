@@ -14,7 +14,7 @@ permissions:
 env:
   # Same Helm as the Argo CD release in bootstrap/install.sh, so the render matches what Argo CD applies.
   # renovate: datasource=github-releases depName=helm/helm
-  HELM_VERSION: v4.2.1
+  HELM_VERSION: v4.3.2
   # renovate: datasource=github-releases depName=yannh/kubeconform
   KUBECONFORM_VERSION: v0.8.0
   # renovate: datasource=docker depName=python
