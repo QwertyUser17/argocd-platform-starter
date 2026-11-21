@@ -55,7 +55,7 @@ jobs:
             "https://raw.githubusercontent.com/yannh/kubeconform/${KUBECONFORM_VERSION}/scripts/openapi2jsonschema.py"
           docker run --rm -v "$PWD/schemas:/schemas" -w /schemas \
             -e FILENAME_FORMAT='{fullgroup}-{kind}-{version}' "python:${PYTHON_IMAGE_TAG}" \
-            sh -c 'pip install --quiet --root-user-action=ignore pyyaml==6.0.3 && python3 openapi2jsonschema.py crds.yaml > /dev/null'
+            sh -c 'pip install --quiet --root-user-action=ignore pyyaml==6.0.4 && python3 openapi2jsonschema.py crds.yaml > /dev/null'
 
       - name: Validate against Kubernetes and CRD schemas
         run: |
